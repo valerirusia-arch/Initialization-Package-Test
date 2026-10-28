@@ -1,0 +1,161 @@
+# .github/workflows/scope-guard.yml
+name: scope-guard
+on: pull_request
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm ci
+
+      # Fails loudly if eslint.presentation.js got dropped or the config was
+      # replaced instead of extended. Without this, every check below can pass
+      # against a config with no rules in it.
+      #
+      # These greps assert on rule PAYLOADS (the message strings), never on rule
+      # IDs. A rule ID proves nothing: `no-logic-in-presentation` and
+      # `antd-only` both used to set `no-restricted-imports`, so grepping the ID
+      # stayed green while flat config silently discarded one of the two
+      # payloads. If you reword a message below, reword it here too — that
+      # coupling is the point.
+      - name: Guard integrity (rules are actually loaded)
+        run: |
+          CFG=$(npx eslint --print-config src/flows/routes.tsx)
+          echo "$CFG" | grep -q '"react-hooks/rules-of-hooks"' || { echo "::error::react-hooks missing — the baseline config was clobbered"; exit 1; }
+          echo "$CFG" | grep -q 'Use antd <Button>'                     || { echo "::error::antd-only element ban missing"; exit 1; }
+          echo "$CFG" | grep -q 'No React Query in presentation'        || { echo "::error::no-logic ban missing — a second no-restricted-imports entry has overwritten it"; exit 1; }
+          echo "$CFG" | grep -q 'UI/flows cannot import from smart layers' || { echo "::error::smart-layer import ban missing"; exit 1; }
+          echo "$CFG" | grep -q 'one component library'                 || { echo "::error::second-library ban missing"; exit 1; }
+          echo "$CFG" | grep -q 'No hardcoded colors'                   || { echo "::error::tokens-not-hex rule missing"; exit 1; }
+          echo "$CFG" | grep -q 'No fetch() in presentation'            || { echo "::error::no-restricted-globals missing"; exit 1; }
+          echo "✓ presentation guardrails are live"
+
+      # Belt and braces: prove the bans FIRE, not just that they are configured.
+      # A temp file that violates one rule from each block must produce errors.
+      # This is what catches a guardrail that is present but inert.
+      - name: Guards actually fire (negative test)
+        run: |
+          mkdir -p src/flows/__guardcheck
+          cat > src/flows/__guardcheck/probe.tsx <<'PROBE'
+          import axios from "axios";
+          const c = "#1677ff";
+          export const Probe = () => <button style={{ color: c }}>{String(axios)}</button>;
+          PROBE
+          # --format json, not unix: the unix formatter was unbundled from
+          # ESLint core and would need a separate install.
+          set +e
+          OUT=$(npx eslint src/flows/__guardcheck/probe.tsx --format json)
+          set -e
+          rm -rf src/flows/__guardcheck
+          echo "$OUT" | grep -q '"no-restricted-imports"' || { echo "::error::no-logic ban did not fire on a deliberate violation"; exit 1; }
+          echo "$OUT" | grep -q '"react/forbid-elements"' || { echo "::error::antd-only ban did not fire on a deliberate violation"; exit 1; }
+          echo "$OUT" | grep -q '"no-restricted-syntax"'  || { echo "::error::hex ban did not fire on a deliberate violation"; exit 1; }
+          echo "✓ all three guardrails fired on a deliberate violation"
+
+      # `-b` is REQUIRED. The Vite react-ts template's root tsconfig.json is a
+      # solution file ("files": [] + references), so plain `tsc --noEmit` reads
+      # it, finds nothing to compile, and exits 0 — a green check over zero
+      # files. Verified: a deliberate TS2322 in src/main.tsx passes `--noEmit`
+      # and fails `-b --noEmit`.
+      - name: Types
+        run: npx tsc -b --noEmit
+
+      - name: Lint presentation folders (antd-only + tokens + no logic)
+        run: npx eslint "src/{shared/ui,features/*/ui,flows,theme,stories}/**/*.{ts,tsx}" --max-warnings=0
+
+      # Neither build ran in CI before, so "it compiles" and "the DevBar is
+      # tree-shaken out of production" were both assertions nothing checked.
+      - name: Build app
+        run: npm run build
+
+      - name: DevBar is absent from the production bundle
+        run: |
+          for S in "Jump to screen" "Flow map" "localhost:6006"; do
+            if grep -rqF "$S" dist/; then
+              echo "::error::DevBar string \"$S\" leaked into the production bundle — the import.meta.env.DEV split is broken"
+              exit 1
+            fi
+          done
+          echo "✓ DevBar tree-shaken out of dist/"
+
+      - name: Build Storybook
+        run: npx storybook build
+
+      # The Theme Showcase must render EVERY antd component. This asks the
+      # installed antd what it exports and fails if any component is missing —
+      # so a new antd minor can't silently leave designers with an incomplete
+      # page. (It used to be a hand-kept list that nothing checked.) It also
+      # fails if the Showcase shrank below scripts/showcase-baseline.json.
+      - name: Theme Showcase covers every antd component (and hasn't shrunk)
+        run: node scripts/check-showcase-coverage.mjs
+
+      - name: Theme Showcase stories exist (All Components + 7 categories)
+        run: |
+          N=$(grep -o '"system-theme-showcase--[a-z-]*"' storybook-static/index.json | sort -u | wc -l)
+          [ "$N" -ge 8 ] || { echo "::error::expected 8 Theme Showcase stories, found $N"; exit 1; }
+          echo "✓ $N Theme Showcase stories"
+
+      # Prove the coverage check FIRES, the same way the ESLint guards are
+      # proven above: break a temp copy of the Showcase in the two ways agents
+      # actually broke it, and fail if the check stays green.
+      - name: Showcase guard actually fires (negative test)
+        run: |
+          set +e
+          T=$(mktemp -d); cp -r src/stories/showcase/. "$T"
+          # 1) delete one demo (the "trim it to get green" move)
+          sed -i '0,/<Button type="dashed">Dashed<\/Button>/{/<Button type="dashed">Dashed<\/Button>/d}' "$T/ShowcaseGeneral.tsx"
+          SHOWCASE_DIR="$T" node scripts/check-showcase-coverage.mjs >/dev/null 2>&1 && { echo "::error::deleting a Showcase demo was not caught"; exit 1; }
+          cp src/stories/showcase/ShowcaseGeneral.tsx "$T/"
+          # 2) drop a replacement (List is allowed to be absent only while Listy is shown)
+          sed -i 's/ Listy,//' "$T/ShowcaseDataDisplay.tsx"
+          SHOWCASE_DIR="$T" node scripts/check-showcase-coverage.mjs >/dev/null 2>&1 && { echo "::error::removing Listy was not caught"; exit 1; }
+          rm -rf "$T"
+          echo "✓ coverage + shrink guard fired on deliberate violations"
+
+      - name: Every UI component has a story
+        run: node scripts/check-stories.mjs
+
+      # check:showcase proves components are ON the page; this proves they are
+      # VISIBLE: every Showcase story in light/dark × default/stress tokens, no
+      # console warnings (antd deprecations only print in dev, hence `storybook dev`),
+      # no zero-size demos, no clipped content, no collapsed Menu.
+      - name: Theme Showcase smoke test (everything visible, clean console)
+        run: |
+          npx playwright install --with-deps chromium
+          npx storybook dev -p 6006 --ci --no-open > storybook-dev.log 2>&1 &
+          for i in $(seq 1 60); do curl -sf http://localhost:6006/index.json >/dev/null && break; sleep 3; done
+          curl -sf http://localhost:6006/index.json >/dev/null || { echo "::error::storybook dev did not start"; cat storybook-dev.log; exit 1; }
+          node scripts/smoke-showcase.mjs http://localhost:6006
+
+      # The DevBar hardcodes this story ID. If a story title or export name
+      # drifts, the "Flow map" button 404s and nothing else would notice.
+      - name: DevBar deep link resolves to a real story
+        run: |
+          grep -q 'system-flow-map--all-flows' storybook-static/index.json \
+            || { echo "::error::story ID system-flow-map--all-flows not generated — the DevBar's Flow map button is dead"; exit 1; }
+          echo "✓ Flow map story ID matches the DevBar link"
+
+      # The bridge must stay generic: /app reads flows/routes.tsx, it never names
+      # screens. If this fails, someone hardcoded a route and designers will be
+      # forced into /app on their next flow.
+      - name: Router bridge is generic
+        run: |
+          grep -q 'from "../flows/routes"' src/app/router.tsx \
+            || { echo "::error::src/app/router.tsx no longer consumes flows/routes.tsx"; exit 1; }
+          echo "✓ router bridge consumes /flows"
+
+      # check-scope.mjs now FAILS the job if this ref doesn't resolve, instead of
+      # printing "skipped" and exiting 0. Fetch it explicitly so the guard has
+      # something to compare against.
+      - name: Fetch base branch
+        run: git fetch --no-tags origin "${{ github.base_ref }}:refs/remotes/origin/${{ github.base_ref }}" || git fetch --no-tags origin "${{ github.base_ref }}"
+
+      - name: Scope check (designer stays in presentation)
+        run: node scripts/check-scope.mjs
+        env:
+          GITHUB_BASE_REF: origin/${{ github.base_ref }}

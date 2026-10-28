@@ -1,0 +1,70 @@
+{
+  "name": "opa-lms",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "concurrently -k -n app,storybook -c cyan,magenta \"npm:dev:app\" \"npm:dev:storybook\"",
+    "dev:app": "vite",
+    "dev:storybook": "storybook dev -p 6006 --no-open",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview",
+    "build-storybook": "storybook build",
+    "check:showcase": "node scripts/check-showcase-coverage.mjs",
+    "check:stories": "node scripts/check-stories.mjs",
+    "test:showcase": "node scripts/smoke-showcase.mjs",
+    "prepare": "husky"
+  },
+  "dependencies": {
+    "@ant-design/icons": "^6.3.4",
+    "@fontsource-variable/inter": "^5.3.0",
+    "@fontsource/playfair-display": "^5.3.0",
+    "@tanstack/react-query": "^5.105.0",
+    "@tanstack/react-router": "^1.170.46",
+    "antd": "^6.6.8",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "zod": "^4.6.7",
+    "zustand": "^5.0.16"
+  },
+  "devDependencies": {
+    "@chromatic-com/storybook": "latest",
+    "@eslint/js": "^9.39.5",
+    "@storybook/addon-a11y": "^10.6.5",
+    "@storybook/addon-docs": "^10.6.5",
+    "@storybook/addon-mcp": "^10.6.5",
+    "@storybook/addon-vitest": "^10.6.5",
+    "@storybook/tanstack-react": "^10.6.5",
+    "@types/node": "^24.19.2",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.2",
+    "@vitest/browser-playwright": "latest",
+    "@vitest/coverage-v8": "latest",
+    "concurrently": "^10.0.6",
+    "eslint": "^9.39.5",
+    "eslint-plugin-react": "^7.37.5",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "eslint-plugin-react-refresh": "^0.5.7",
+    "eslint-plugin-storybook": "^10.6.5",
+    "globals": "^17.13.0",
+    "husky": "^9.1.7",
+    "lint-staged": "^17.6.0",
+    "playwright": "latest",
+    "storybook": "^10.6.5",
+    "typescript": "~6.0.3",
+    "typescript-eslint": "^8.72.1",
+    "vite": "^8.3.5",
+    "vitest": "latest"
+  },
+  "eslintConfig": {
+    "extends": [
+      "plugin:storybook/recommended"
+    ]
+  },
+  "lint-staged": {
+    "src/{shared/ui,features/*/ui,flows,theme,stories}/**/*.{ts,tsx}": [
+      "eslint --max-warnings=0"
+    ]
+  }
+}

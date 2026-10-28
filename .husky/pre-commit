@@ -1,0 +1,4 @@
+npx lint-staged
+node scripts/check-scope.mjs
+node scripts/check-showcase-coverage.mjs
+node scripts/check-stories.mjs

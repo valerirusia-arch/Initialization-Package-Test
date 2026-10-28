@@ -1,0 +1,46 @@
+{
+  "note": "Floor for scripts/check-showcase-coverage.mjs. Raise it, never lower it to get green.",
+  "antd": "6.6.8",
+  "files": {
+    "ShowcaseDataDisplay.tsx": {
+      "sections": 9,
+      "demos": 5,
+      "elements": 89
+    },
+    "ShowcaseDataEntry.tsx": {
+      "sections": 11,
+      "demos": 8,
+      "elements": 116
+    },
+    "ShowcaseFeedback.tsx": {
+      "sections": 5,
+      "demos": 7,
+      "elements": 54
+    },
+    "ShowcaseGeneral.tsx": {
+      "sections": 5,
+      "demos": 1,
+      "elements": 67
+    },
+    "ShowcaseKit.tsx": {
+      "sections": 0,
+      "demos": 0,
+      "elements": 17
+    },
+    "ShowcaseLayout.tsx": {
+      "sections": 7,
+      "demos": 4,
+      "elements": 63
+    },
+    "ShowcaseNavigation.tsx": {
+      "sections": 7,
+      "demos": 14,
+      "elements": 52
+    },
+    "ShowcaseOther.tsx": {
+      "sections": 3,
+      "demos": 2,
+      "elements": 16
+    }
+  }
+}
